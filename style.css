@@ -89,7 +89,7 @@ body {
 .brand-name strong { font-weight: 700; }
 .brand-sub {
   font-family: var(--font-mono);
-  font-size: 8px; color: var(--text-muted);
+  font-size: 10px; color: var(--text-muted);
   letter-spacing: 0.3px; margin-top: 3px;
 }
 .brand-text { flex: 1; }
@@ -128,8 +128,9 @@ body {
   background: transparent;
   font-family: var(--font-mono);
   font-weight: 500;
-  font-size: 9px;
-  letter-spacing: 2px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1px;
   color: var(--text-muted);
   cursor: pointer;
   transition: all 0.2s;
@@ -149,14 +150,14 @@ body {
 /* ─── FIELD LABEL ─── */
 .field-label {
   font-family: var(--font-mono);
-  font-size: 8px; font-weight: 500;
-  letter-spacing: 2.5px; text-transform: uppercase;
+  font-size: 13px; font-weight: 700;
+  letter-spacing: 1px; text-transform: uppercase;
   color: var(--text-mid);
   margin-bottom: 8px;
 }
 .field-hint {
   font-family: var(--font-mono);
-  font-size: 8px; color: var(--text-muted);
+  font-size: 12px; color: var(--text-muted);
   letter-spacing: 0.3px;
   margin-bottom: 14px;
 }
@@ -169,7 +170,7 @@ body {
   border-radius: var(--radius-sm);
   padding: 12px 14px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 16px;
   color: var(--text);
   outline: none;
   transition: border-color 0.2s;
@@ -224,12 +225,12 @@ body {
 .id-card-info { padding: 8px 10px 10px; }
 .id-card-name {
   font-family: var(--font-mono);
-  font-weight: 500; font-size: 9px;
+  font-weight: 700; font-size: 14px;
   color: var(--text);
-  text-transform: uppercase; letter-spacing: 0.5px;
+  text-transform: uppercase; letter-spacing: 0.3px;
   margin-bottom: 2px;
 }
-.id-card-status { font-family: var(--font-mono); font-size: 7.5px; color: var(--text-muted); }
+.id-card-status { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
 .id-card.has-data .id-card-status { color: var(--text-mid); }
 
 /* ─── SIGNATURE UPLOAD AREA ─── */
@@ -248,7 +249,7 @@ body {
 .sig-upload-area:active { border-color: var(--text-mid); }
 .sig-upload-txt {
   font-family: var(--font-mono);
-  font-size: 9px; color: var(--text-muted); letter-spacing: 0.5px;
+  font-size: 14px; font-weight: 700; color: var(--text-muted); letter-spacing: 0.3px;
 }
 .sig-upload-area img {
   width: 100%; height: 100%;
@@ -282,7 +283,7 @@ body {
 }
 .back-btn {
   font-family: var(--font-mono);
-  font-size: 9px; font-weight: 500;
+  font-size: 14px; font-weight: 700;
   letter-spacing: 1px;
   color: var(--text-mid);
   background: transparent; border: none;
@@ -290,8 +291,8 @@ body {
 }
 .doc-detail-title {
   font-family: var(--font-mono);
-  font-size: 9px; font-weight: 500;
-  letter-spacing: 2px; text-transform: uppercase;
+  font-size: 14px; font-weight: 700;
+  letter-spacing: 1.5px; text-transform: uppercase;
   color: var(--text-muted);
 }
 
@@ -305,7 +306,7 @@ body {
   border: 1.5px solid var(--border);
   background: transparent;
   font-family: var(--font-mono);
-  font-size: 8.5px; font-weight: 500;
+  font-size: 14px; font-weight: 700;
   color: var(--text-muted);
   cursor: pointer;
   transition: all 0.2s;
@@ -331,8 +332,8 @@ body {
 }
 .image-slot.has-image { border-style: solid; border-color: var(--border-mid); }
 .image-slot:active { border-color: var(--text-mid); }
-.slot-text { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); }
-.slot-hint { font-family: var(--font-mono); font-size: 8px; color: var(--text-muted); opacity: 0.7; }
+.slot-text { font-family: var(--font-mono); font-size: 15px; font-weight: 700; color: var(--text-muted); }
+.slot-hint { font-family: var(--font-mono); font-size: 13px; color: var(--text-muted); opacity: 0.7; }
 .slot-img-preview { width: 100%; height: 100%; object-fit: contain; position: absolute; inset: 0; }
 
 .slot-actions {
@@ -383,8 +384,8 @@ body {
   padding: 10px 12px;
   text-align: center;
   font-family: var(--font-mono);
-  font-size: 9px; font-weight: 500;
-  letter-spacing: 0.5px;
+  font-size: 14px; font-weight: 700;
+  letter-spacing: 0.3px;
   color: var(--text-mid);
   border: 1.5px solid var(--border-mid);
   cursor: pointer;
@@ -410,11 +411,11 @@ body {
 .share-id-item:active { transform: scale(0.98); }
 .share-id-name {
   font-family: var(--font-mono);
-  font-size: 9px; font-weight: 500;
-  color: var(--text); text-transform: uppercase; letter-spacing: 0.5px;
+  font-size: 15px; font-weight: 700;
+  color: var(--text); text-transform: uppercase; letter-spacing: 0.3px;
   flex: 1;
 }
-.share-id-sub { font-family: var(--font-mono); font-size: 7.5px; color: var(--text-muted); }
+.share-id-sub { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
 .share-id-check {
   width: 14px; height: 14px;
   border-radius: 50%;
@@ -436,8 +437,8 @@ body {
   margin-bottom: 8px;
   cursor: pointer;
 }
-.toggle-label { font-family: var(--font-mono); font-size: 9.5px; font-weight: 500; color: var(--text); }
-.toggle-sub { font-family: var(--font-mono); font-size: 7.5px; color: var(--text-muted); margin-top: 2px; }
+.toggle-label { font-family: var(--font-mono); font-size: 15px; font-weight: 700; color: var(--text); }
+.toggle-sub { font-family: var(--font-mono); font-size: 13px; color: var(--text-muted); margin-top: 2px; }
 .toggle-switch {
   width: 38px; height: 22px;
   background: rgba(160,120,80,0.2);
@@ -478,10 +479,10 @@ body {
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 3px;
 }
-.log-doc { font-family: var(--font-mono); font-size: 9px; font-weight: 500; color: var(--text); text-transform: uppercase; letter-spacing: 0.5px; }
-.log-date { font-family: var(--font-mono); font-size: 7.5px; color: var(--text-muted); }
-.log-recipient { font-family: var(--font-mono); font-size: 8px; color: var(--text-mid); }
-.log-empty { font-family: var(--font-mono); font-size: 9px; color: var(--text-muted); font-style: italic; margin-bottom: 14px; }
+.log-doc { font-family: var(--font-mono); font-size: 14px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.3px; }
+.log-date { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+.log-recipient { font-family: var(--font-mono); font-size: 14px; color: var(--text-mid); }
+.log-empty { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); font-style: italic; margin-bottom: 14px; }
 
 /* ─── FOOTER ─── */
 .leo-footer {
@@ -548,7 +549,7 @@ body {
   border: 1.5px solid var(--border);
   border-radius: 8px;
   font-family: var(--font-mono);
-  font-size: 9px; color: var(--text-mid);
+  font-size: 11px; font-weight: 600; color: var(--text-mid);
   cursor: pointer; transition: all 0.18s;
 }
 .orient-btn:active { background: var(--btn-bg); }
@@ -556,7 +557,7 @@ body {
 .enhance-group { margin-bottom: 14px; }
 .enhance-label {
   font-family: var(--font-mono);
-  font-size: 8px; color: var(--text-mid);
+  font-size: 11px; font-weight: 600; color: var(--text-mid);
   letter-spacing: 1px; text-transform: uppercase;
   margin-bottom: 8px;
   display: flex; justify-content: space-between;
@@ -587,7 +588,7 @@ input[type=range]::-webkit-slider-thumb {
 }
 .sig-hint {
   font-family: var(--font-mono);
-  font-size: 8px; color: var(--text-muted);
+  font-size: 11px; color: var(--text-muted);
   text-align: center; margin-top: 6px;
 }
 
@@ -599,7 +600,7 @@ input[type=range]::-webkit-slider-thumb {
   border: 1.5px solid var(--border-mid);
   padding: 11px 20px; border-radius: 20px;
   font-family: var(--font-mono);
-  font-size: 11px; font-weight: 500; color: var(--text);
+  font-size: 13px; font-weight: 600; color: var(--text);
   opacity: 0; transition: all 0.28s;
   z-index: 300; white-space: nowrap;
   box-shadow: 0 8px 28px rgba(140,104,68,0.18);

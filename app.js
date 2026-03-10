@@ -618,8 +618,8 @@ function renderA4Canvas(canvas, highRes = true) {
 
       // ─── STAMP + SIGNATURE ROW ───────────────────────────────────────────
       // Both sit BELOW the last image, on the LEFT margin
-      const rowY   = lastImgBottom + 14 * scale;   // top of the row
-      const stampS = 66 * scale;                    // stamp size (approx 40mm)
+      const rowY   = lastImgBottom + 18 * scale;   // top of the row
+      const stampS = 110 * scale;                   // stamp size — bigger (~65mm)
 
       if (state.includeStamp) {
         drawSVGStamp(ctx, pad, rowY, stampS, scale);
@@ -631,27 +631,27 @@ function renderA4Canvas(canvas, highRes = true) {
       if (state.includeSig && activeSig) {
         const sigImg = new Image();
         sigImg.onload = () => {
-          const sigW  = 130 * scale;
-          const sigH  = 46 * scale;
+          const sigW  = 180 * scale;
+          const sigH  = 64 * scale;
           const sigX  = W - pad - sigW;
           const sigY  = rowY + (stampS - sigH) / 2 - 6 * scale;
           ctx.drawImage(sigImg, sigX, sigY, sigW, sigH);
 
           if (recipient) {
-            ctx.fillStyle = '#a08060';
-            ctx.font      = `${8 * scale}px DM Mono, monospace`;
+            ctx.fillStyle = '#8c6844';
+            ctx.font      = `bold ${14 * scale}px DM Mono, monospace`;
             ctx.textAlign = 'right';
-            ctx.fillText(`Shared with ${recipient}`, W - pad, sigY + sigH + 12 * scale);
+            ctx.fillText(`Shared with ${recipient}`, W - pad, sigY + sigH + 18 * scale);
           }
           finishA4(ctx, W, H, scale, resolve, canvas);
         };
         sigImg.src = activeSig;
       } else {
-        if (recipient && !state.includeSig) {
-          ctx.fillStyle = '#a08060';
-          ctx.font      = `${8 * scale}px DM Mono, monospace`;
+        if (recipient) {
+          ctx.fillStyle = '#8c6844';
+          ctx.font      = `bold ${14 * scale}px DM Mono, monospace`;
           ctx.textAlign = 'right';
-          ctx.fillText(`Shared with ${recipient}`, W - pad, rowY + 20 * scale);
+          ctx.fillText(`Shared with ${recipient}`, W - pad, rowY + 30 * scale);
         }
         finishA4(ctx, W, H, scale, resolve, canvas);
       }
@@ -672,23 +672,23 @@ function finishA4(ctx, W, H, scale, resolve, canvas) {
 
 // ─── STAMP (drawn on canvas, matching the approved SVG design) ────────────────
 function drawSVGStamp(ctx, x, y, size, scale) {
-  // size = full stamp diameter in canvas px
   const cx = x + size / 2;
   const cy = y + size / 2;
-  const r  = size / 2;
 
   // White backing circle
   ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.arc(cx, cy, size / 2 - 1, 0, Math.PI * 2);
   ctx.fillStyle = 'white';
   ctx.fill();
 
   const navy   = '#1a3177';
   const red    = '#dc2626';
-  const sw     = size * (20 / 300);   // stroke-width proportional to 300-unit viewbox
-  const outerR = size * (140 / 300);
-  const innerR = size * (90 / 300);
-  const midR   = size * (115 / 300);
+  const sw     = size * 0.038;
+  const outerR = size * 0.44;
+  const innerR = size * 0.30;
+  const bandMid = (outerR + innerR) / 2;   // exact centre of the band
+  const bandH   = outerR - innerR;         // height of the band
+  const fs      = bandH * 0.68;            // font fills ~68% of band height
 
   // Outer ring
   ctx.beginPath();
@@ -698,62 +698,55 @@ function drawSVGStamp(ctx, x, y, size, scale) {
   // Inner ring
   ctx.beginPath();
   ctx.arc(cx, cy, innerR, 0, Math.PI * 2);
-  ctx.strokeStyle = navy; ctx.lineWidth = sw; ctx.stroke();
+  ctx.strokeStyle = navy; ctx.lineWidth = sw * 0.65; ctx.stroke();
 
-  // Stars at 9 and 3 o'clock
-  const starSize = size * (14 / 300);
-  ctx.font = `${starSize * 1.4}px serif`;
+  // Stars at 3 and 9 o'clock on band centre
+  ctx.font = `${size * 0.09}px serif`;
   ctx.fillStyle = navy; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('★', cx - midR, cy);
-  ctx.fillText('★', cx + midR, cy);
+  ctx.fillText('★', cx + bandMid, cy);
+  ctx.fillText('★', cx - bandMid, cy);
 
-  // PHOTOCOPY — top arc
-  const topFontSize = size * (22 / 300);
-  ctx.font = `900 ${topFontSize}px Arial Black, sans-serif`;
+  // ── PHOTOCOPY top arc — text centred on bandMid ───────────────────────────
+  const topText  = 'PHOTOCOPY';
+  const topSpan  = Math.PI * 0.76;
+  const topStart = -Math.PI / 2 - topSpan / 2;
+  const topStep  = topSpan / (topText.length - 1);
+  ctx.font = `bold ${fs}px Arial, sans-serif`;
   ctx.fillStyle = navy;
-  ctx.textBaseline = 'middle';
-  drawArcText(ctx, 'PHOTOCOPY', cx, cy, midR, -Math.PI * 0.82, Math.PI * 0.82, false);
-
-  // SELF ATTESTED — bottom arc
-  const botFontSize = size * (20 / 300);
-  ctx.font = `900 ${botFontSize}px Arial Black, sans-serif`;
-  drawArcText(ctx, 'SELF ATTESTED', cx, cy, midR, Math.PI * 0.18, Math.PI * 0.82, true);
-
-  // Date in center
-  const today   = new Date();
-  const months  = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-  const dateStr = `${String(today.getDate()).padStart(2,'0')} ${months[today.getMonth()]} ${String(today.getFullYear()).slice(2)}`;
-  const dateFontSize = size * (18 / 300);
-  ctx.font = `bold ${dateFontSize}px Arial, sans-serif`;
-  ctx.fillStyle = red;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(dateStr, cx, cy);
-}
-
-function drawArcText(ctx, text, cx, cy, radius, startAngle, endAngle, bottom) {
-  const chars    = text.split('');
-  const totalAngle = bottom ? (Math.PI - Math.PI * 0.36) : (Math.PI - Math.PI * 0.36);
-  const angleStep  = totalAngle / (chars.length - 1);
-  ctx.textAlign    = 'center';
-  ctx.textBaseline = 'middle';
-
-  chars.forEach((ch, i) => {
-    let angle;
-    if (bottom) {
-      // bottom arc: start from left (Math.PI + offset) go to right
-      angle = Math.PI * 0.18 + i * angleStep;
-    } else {
-      // top arc: start from left (-Math.PI + offset) go over top
-      angle = -Math.PI * 0.82 + i * angleStep;
-    }
-    const chX = cx + Math.cos(angle) * radius;
-    const chY = cy + Math.sin(angle) * radius;
+  for (let i = 0; i < topText.length; i++) {
+    const a = topStart + i * topStep;
     ctx.save();
-    ctx.translate(chX, chY);
-    ctx.rotate(angle + (bottom ? -Math.PI / 2 : Math.PI / 2));
-    ctx.fillText(ch, 0, 0);
+    ctx.translate(cx + Math.cos(a) * bandMid, cy + Math.sin(a) * bandMid);
+    ctx.rotate(a + Math.PI / 2);
+    ctx.fillText(topText[i], 0, 0);
     ctx.restore();
-  });
+  }
+
+  // ── SELF ATTESTED bottom arc — text centred on bandMid ───────────────────
+  const botText  = 'SELF ATTESTED';
+  const botSpan  = Math.PI * 0.76;
+  const botStart = Math.PI / 2 + botSpan / 2;
+  const botStep  = -botSpan / (botText.length - 1);
+  ctx.font = `bold ${fs * 0.86}px Arial, sans-serif`;
+  ctx.fillStyle = navy;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let i = 0; i < botText.length; i++) {
+    const a = botStart + i * botStep;
+    ctx.save();
+    ctx.translate(cx + Math.cos(a) * bandMid, cy + Math.sin(a) * bandMid);
+    ctx.rotate(a - Math.PI / 2);
+    ctx.fillText(botText[i], 0, 0);
+    ctx.restore();
+  }
+
+  // ── Date in centre ────────────────────────────────────────────────────────
+  const today  = new Date();
+  const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const dateStr = `${String(today.getDate()).padStart(2,'0')} ${months[today.getMonth()]} ${String(today.getFullYear()).slice(2)}`;
+  ctx.font = `bold ${size * 0.08}px Arial, sans-serif`;
+  ctx.fillStyle = red; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(dateStr, cx, cy);
 }
 
 // ─── PDF GENERATION ───────────────────────────────────────────────────────────
