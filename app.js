@@ -1,0 +1,838 @@
+// ─── KYC DIRECT app.js ────────────────────────────────────────────────────────
+
+const DB_KEY      = 'kycdirect_v2_docs';
+const SIG_KEY     = 'kycdirect_v2_sig';
+const LOG_KEY     = 'kycdirect_v2_log';
+
+const IDS = [
+  { id: 'pan',      name: 'PAN Card',        sides: ['Front'] },
+  { id: 'aadhaar',  name: 'Aadhaar Card',    sides: ['Front', 'Back'] },
+  { id: 'dl',       name: 'Driving License', sides: ['Front', 'Back'] },
+  { id: 'passport', name: 'Passport',        sides: ['Front'] },
+];
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let state = {
+  docs: {},
+  currentDoc: null,
+  currentSide: 0,
+  sigData: null,          // drawn signature data URL
+  sigImageData: null,     // uploaded signature image data URL
+  selectedShareId: null,
+  includeStamp: true,
+  includeSig: true,
+  shareLog: [],           // [{ docName, recipient, date }]
+};
+
+// ─── PERSISTENCE ──────────────────────────────────────────────────────────────
+function loadState() {
+  try {
+    const d = localStorage.getItem(DB_KEY);
+    if (d) state.docs = JSON.parse(d);
+    const s = localStorage.getItem(SIG_KEY);
+    if (s) { const p = JSON.parse(s); state.sigData = p.drawn || null; state.sigImageData = p.image || null; }
+    const l = localStorage.getItem(LOG_KEY);
+    if (l) state.shareLog = JSON.parse(l);
+  } catch(e) {}
+}
+
+function saveState() {
+  try { localStorage.setItem(DB_KEY, JSON.stringify(state.docs)); } catch(e) { toast('Storage full', 'error'); }
+}
+
+function saveSig() {
+  try { localStorage.setItem(SIG_KEY, JSON.stringify({ drawn: state.sigData, image: state.sigImageData })); } catch(e) {}
+}
+
+function saveLog() {
+  try { localStorage.setItem(LOG_KEY, JSON.stringify(state.shareLog.slice(0, 50))); } catch(e) {}
+}
+
+function addLogEntry(docName, recipient) {
+  const today = new Date();
+  const dateStr = today.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }).toUpperCase();
+  state.shareLog.unshift({ docName, recipient: recipient || '—', date: dateStr });
+  saveLog();
+  renderShareLog();
+}
+
+// ─── DOM HELPERS ──────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  const s = $(`screen-${name}`);
+  if (s) s.classList.add('active');
+}
+
+function toast(msg, type = '') {
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = `toast ${type} show`;
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  loadState();
+  renderVault();
+  renderShareList();
+  renderShareLog();
+  setupNav();
+  setupCrop();
+  setupSig();
+  setupShare();
+  setupSigUpload();
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+});
+
+// ─── NAV ──────────────────────────────────────────────────────────────────────
+function setupNav() {
+  document.querySelectorAll('.nav-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const s = tab.dataset.screen;
+      if (s === 'vault') { showScreen('vault'); renderVault(); }
+      else if (s === 'share') { showScreen('share'); renderShareList(); renderShareLog(); updateA4Preview(); }
+    });
+  });
+}
+
+// ─── VAULT SCREEN ─────────────────────────────────────────────────────────────
+function renderVault() {
+  const grid = $('idGrid');
+  grid.innerHTML = '';
+  IDS.forEach(id => {
+    const hasFront = !!state.docs[`${id.id}_${id.sides[0]}`];
+    const card = document.createElement('div');
+    card.className = `id-card ${hasFront ? 'has-data' : ''}`;
+
+    const vis = document.createElement('div');
+    vis.className = `id-card-visual${hasFront ? ' has-img' : ''}`;
+    if (hasFront) {
+      const img = document.createElement('img');
+      img.className = 'preview-img';
+      img.src = state.docs[`${id.id}_${id.sides[0]}`];
+      img.alt = '';
+      vis.appendChild(img);
+    }
+
+    const info = document.createElement('div');
+    info.className = 'id-card-info';
+    info.innerHTML = `
+      <div class="id-card-name">${id.name}</div>
+      <div class="id-card-status">${hasFront ? '✓ stored' : 'tap to add'}</div>`;
+
+    card.appendChild(vis);
+    card.appendChild(info);
+    card.addEventListener('click', () => openDocDetail(id));
+    grid.appendChild(card);
+  });
+
+  // Render sig upload area
+  const area = $('sigUploadArea');
+  const activeSig = state.sigImageData || state.sigData;
+  if (activeSig) {
+    area.innerHTML = `<img src="${activeSig}" alt="signature">`;
+  } else {
+    area.innerHTML = `<span class="sig-upload-txt">tap to upload signature image</span>`;
+  }
+}
+
+// ─── SIGNATURE IMAGE UPLOAD (vault) ──────────────────────────────────────────
+function setupSigUpload() {
+  $('sigUploadArea').addEventListener('click', () => $('sigImageInput').click());
+  $('sigImageInput').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      state.sigImageData = ev.target.result;
+      saveSig();
+      renderVault();
+      toast('Signature saved', 'success');
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  });
+}
+
+// ─── DOC DETAIL ───────────────────────────────────────────────────────────────
+function openDocDetail(idDef) {
+  state.currentDoc = idDef;
+  state.currentSide = 0;
+  $('docTitle').textContent = idDef.name;
+  renderSideTabs();
+  renderDocSide();
+  showScreen('doc');
+  $('btnBack').onclick = () => showScreen('vault');
+}
+
+function renderSideTabs() {
+  const container = $('sideTabs');
+  container.innerHTML = '';
+  state.currentDoc.sides.forEach((side, i) => {
+    const btn = document.createElement('button');
+    btn.className = `side-tab ${i === state.currentSide ? 'active' : ''}`;
+    btn.textContent = side;
+    btn.onclick = () => { state.currentSide = i; renderSideTabs(); renderDocSide(); };
+    container.appendChild(btn);
+  });
+}
+
+function renderDocSide() {
+  const idDef = state.currentDoc;
+  const side  = idDef.sides[state.currentSide];
+  const key   = `${idDef.id}_${side}`;
+  const img   = state.docs[key];
+  const slot  = $('imageSlot');
+
+  if (img) {
+    slot.innerHTML = `<img class="slot-img-preview" src="${img}" alt="">`;
+    slot.classList.add('has-image');
+    $('btnRemove').style.display = '';
+  } else {
+    slot.innerHTML = `<span class="slot-text">tap to capture or upload</span>
+      <span class="slot-hint">${side} · ${idDef.name}</span>`;
+    slot.classList.remove('has-image');
+    $('btnRemove').style.display = 'none';
+  }
+
+  slot.onclick = () => openImagePicker(key);
+  $('btnCamera').onclick = () => triggerCamera(key);
+  $('btnUpload').onclick  = () => openImagePicker(key);
+  $('btnRemove').onclick  = () => { delete state.docs[key]; saveState(); renderDocSide(); renderVault(); toast('Removed', 'success'); };
+}
+
+// ─── IMAGE INPUT ──────────────────────────────────────────────────────────────
+function openImagePicker(key) {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = e => handleImageFile(e.target.files[0], key);
+  inp.click();
+}
+
+function triggerCamera(key) {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*'; inp.capture = 'environment';
+  inp.onchange = e => handleImageFile(e.target.files[0], key);
+  inp.click();
+}
+
+function handleImageFile(file, key) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => openCropModal(e.target.result, key);
+  reader.readAsDataURL(file);
+}
+
+// ─── CROP / ENHANCE ───────────────────────────────────────────────────────────
+let cropState = { rotation: 0, brightness: 100, sharpness: 0, flipH: false, flipV: false, srcImg: null,
+                  cropX: 0.05, cropY: 0.05, cropW: 0.9, cropH: 0.9, dragging: false, resizing: false };
+let cropTargetKey = null;
+
+function openCropModal(src, key) {
+  cropTargetKey = key;
+  Object.assign(cropState, { rotation: 0, brightness: 100, sharpness: 0, flipH: false, flipV: false,
+                              cropX: 0.05, cropY: 0.05, cropW: 0.9, cropH: 0.9 });
+  $('brightnessVal').textContent = '100';
+  $('sharpnessVal').textContent  = '0';
+  $('rangeBrightness').value = 100;
+  $('rangeSharpness').value  = 0;
+  const img = new Image();
+  img.onload = () => { cropState.srcImg = img; drawCropCanvas(); };
+  img.src = src;
+  $('cropModal').classList.add('active');
+}
+
+function setupCrop() {
+  const canvas = $('cropCanvas');
+
+  $('rangeBrightness').addEventListener('input', e => { cropState.brightness = +e.target.value; $('brightnessVal').textContent = e.target.value; drawCropCanvas(); });
+  $('rangeSharpness').addEventListener('input',  e => { cropState.sharpness  = +e.target.value; $('sharpnessVal').textContent  = e.target.value; drawCropCanvas(); });
+
+  $('btnRotateL').onclick   = () => { cropState.rotation -= 90; drawCropCanvas(); };
+  $('btnRotateR').onclick   = () => { cropState.rotation += 90; drawCropCanvas(); };
+  $('btnRotate180').onclick = () => { cropState.rotation += 180; drawCropCanvas(); };
+  $('btnFlipH').onclick     = () => { cropState.flipH = !cropState.flipH; drawCropCanvas(); };
+  $('btnFlipV').onclick     = () => { cropState.flipV = !cropState.flipV; drawCropCanvas(); };
+
+  $('btnCancelCrop').onclick = () => $('cropModal').classList.remove('active');
+  $('btnApplyCrop').onclick  = applyCrop;
+
+  // Touch/mouse drag for crop handles
+  let dragStartX, dragStartY, dragType, origCrop;
+
+  const getPos = e => {
+    const rect = canvas.getBoundingClientRect();
+    const cx = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    const cy = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+    return { x: cx / rect.width, y: cy / rect.height };
+  };
+
+  const onStart = e => {
+    e.preventDefault();
+    const p = getPos(e);
+    origCrop = { ...cropState };
+    dragStartX = p.x; dragStartY = p.y;
+    const ex = cropState.cropX + cropState.cropW, ey = cropState.cropY + cropState.cropH;
+    const near = (a, b) => Math.abs(a - b) < 0.06;
+    if (near(p.x, ex) && near(p.y, ey)) dragType = 'br';
+    else if (near(p.x, cropState.cropX) && near(p.y, cropState.cropY)) dragType = 'tl';
+    else if (p.x > cropState.cropX && p.x < ex && p.y > cropState.cropY && p.y < ey) dragType = 'move';
+    else dragType = null;
+  };
+
+  const onMove = e => {
+    if (!dragType) return;
+    e.preventDefault();
+    const p = getPos(e);
+    const dx = p.x - dragStartX, dy = p.y - dragStartY;
+    if (dragType === 'move') {
+      cropState.cropX = Math.max(0, Math.min(1 - origCrop.cropW, origCrop.cropX + dx));
+      cropState.cropY = Math.max(0, Math.min(1 - origCrop.cropH, origCrop.cropY + dy));
+    } else if (dragType === 'br') {
+      cropState.cropW = Math.max(0.1, Math.min(1 - origCrop.cropX, origCrop.cropW + dx));
+      cropState.cropH = Math.max(0.1, Math.min(1 - origCrop.cropY, origCrop.cropH + dy));
+    } else if (dragType === 'tl') {
+      const nw = origCrop.cropW - dx, nh = origCrop.cropH - dy;
+      if (nw > 0.1) { cropState.cropX = origCrop.cropX + dx; cropState.cropW = nw; }
+      if (nh > 0.1) { cropState.cropY = origCrop.cropY + dy; cropState.cropH = nh; }
+    }
+    drawCropCanvas();
+  };
+
+  const onEnd = () => { dragType = null; };
+
+  canvas.addEventListener('mousedown',  onStart);
+  canvas.addEventListener('mousemove',  onMove);
+  canvas.addEventListener('mouseup',    onEnd);
+  canvas.addEventListener('touchstart', onStart, { passive: false });
+  canvas.addEventListener('touchmove',  onMove,  { passive: false });
+  canvas.addEventListener('touchend',   onEnd);
+}
+
+function drawCropCanvas() {
+  const canvas = $('cropCanvas');
+  const img = cropState.srcImg;
+  if (!img) return;
+
+  const dispW = canvas.parentElement.clientWidth || 300;
+  const aspect = img.width / img.height;
+  canvas.width  = dispW;
+  canvas.height = dispW / aspect;
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Draw image with rotation/flip/brightness
+  ctx.save();
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate((cropState.rotation * Math.PI) / 180);
+  ctx.scale(cropState.flipH ? -1 : 1, cropState.flipV ? -1 : 1);
+  const br = cropState.brightness / 100;
+  ctx.filter = `brightness(${br})`;
+  ctx.drawImage(img, -canvas.width / 2, -canvas.height / 2, canvas.width, canvas.height);
+  ctx.filter = 'none';
+  ctx.restore();
+
+  // Dim outside crop
+  const cx = cropState.cropX * canvas.width, cy = cropState.cropY * canvas.height;
+  const cw = cropState.cropW * canvas.width, ch = cropState.cropH * canvas.height;
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fillRect(0, 0, canvas.width, cy);
+  ctx.fillRect(0, cy + ch, canvas.width, canvas.height - cy - ch);
+  ctx.fillRect(0, cy, cx, ch);
+  ctx.fillRect(cx + cw, cy, canvas.width - cx - cw, ch);
+
+  // Crop border
+  ctx.strokeStyle = 'rgba(160,120,80,0.9)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(cx, cy, cw, ch);
+
+  // Corner handles
+  const hs = 8;
+  ctx.fillStyle = 'rgba(160,120,80,0.9)';
+  [[cx, cy], [cx + cw - hs, cy], [cx, cy + ch - hs], [cx + cw - hs, cy + ch - hs]].forEach(([x, y]) => ctx.fillRect(x, y, hs, hs));
+}
+
+function applyCrop() {
+  const img = cropState.srcImg;
+  if (!img) return;
+
+  const off = document.createElement('canvas');
+  off.width  = img.width;
+  off.height = img.height;
+  const ctx = off.getContext('2d');
+
+  ctx.save();
+  ctx.translate(off.width / 2, off.height / 2);
+  ctx.rotate((cropState.rotation * Math.PI) / 180);
+  ctx.scale(cropState.flipH ? -1 : 1, cropState.flipV ? -1 : 1);
+  ctx.filter = `brightness(${cropState.brightness / 100})`;
+  ctx.drawImage(img, -off.width / 2, -off.height / 2);
+  ctx.filter = 'none';
+  ctx.restore();
+
+  // Apply sharpness via unsharp mask
+  if (cropState.sharpness > 0) {
+    applySharpness(ctx, off.width, off.height, cropState.sharpness / 100);
+  }
+
+  // Crop
+  const cropX = cropState.cropX * off.width,  cropY = cropState.cropY * off.height;
+  const cropW = cropState.cropW * off.width,   cropH = cropState.cropH * off.height;
+  const final = document.createElement('canvas');
+  final.width = cropW; final.height = cropH;
+  final.getContext('2d').drawImage(off, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
+  const dataURL = final.toDataURL('image/jpeg', 0.92);
+  state.docs[cropTargetKey] = dataURL;
+  saveState();
+  renderDocSide();
+  renderVault();
+  $('cropModal').classList.remove('active');
+  toast('Saved', 'success');
+}
+
+function applySharpness(ctx, w, h, amount) {
+  const imageData = ctx.getImageData(0, 0, w, h);
+  const d = imageData.data;
+  const kernel = [-1, -1, -1, -1, 8 + (1 / (amount + 0.001)), -1, -1, -1, -1];
+  const tmp = new Uint8ClampedArray(d);
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      for (let c = 0; c < 3; c++) {
+        let v = 0;
+        for (let ky = -1; ky <= 1; ky++)
+          for (let kx = -1; kx <= 1; kx++)
+            v += tmp[((y + ky) * w + (x + kx)) * 4 + c] * kernel[(ky + 1) * 3 + (kx + 1)];
+        d[(y * w + x) * 4 + c] = Math.min(255, Math.max(0, v));
+      }
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
+// ─── SIGNATURE PAD ────────────────────────────────────────────────────────────
+function setupSig() {
+  const canvas = $('sigCanvas');
+  const ctx    = canvas.getContext('2d');
+  let drawing  = false, lastX = 0, lastY = 0;
+
+  function canvasPos(e) {
+    const r = canvas.getBoundingClientRect();
+    const scaleX = canvas.width  / r.width;
+    const scaleY = canvas.height / r.height;
+    const src = e.touches ? e.touches[0] : e;
+    return { x: (src.clientX - r.left) * scaleX, y: (src.clientY - r.top) * scaleY };
+  }
+
+  function startDraw(e) {
+    e.preventDefault();
+    drawing = true;
+    const p = canvasPos(e); lastX = p.x; lastY = p.y;
+    ctx.beginPath(); ctx.moveTo(lastX, lastY);
+  }
+  function draw(e) {
+    if (!drawing) return;
+    e.preventDefault();
+    const p = canvasPos(e);
+    ctx.lineWidth   = 2.5;
+    ctx.lineCap     = 'round';
+    ctx.lineJoin    = 'round';
+    ctx.strokeStyle = '#8c6844';
+    ctx.beginPath(); ctx.moveTo(lastX, lastY); ctx.lineTo(p.x, p.y); ctx.stroke();
+    lastX = p.x; lastY = p.y;
+  }
+  function endDraw() { drawing = false; }
+
+  canvas.addEventListener('mousedown',  startDraw);
+  canvas.addEventListener('mousemove',  draw);
+  canvas.addEventListener('mouseup',    endDraw);
+  canvas.addEventListener('touchstart', startDraw, { passive: false });
+  canvas.addEventListener('touchmove',  draw,      { passive: false });
+  canvas.addEventListener('touchend',   endDraw);
+
+  $('btnOpenSigPad').onclick = () => {
+    // Set canvas size
+    const w = canvas.parentElement.clientWidth - 40 || 300;
+    canvas.width = w; canvas.height = 130;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    $('sigModal').classList.add('active');
+  };
+
+  $('btnClearSig').onclick = () => ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  $('btnCloseSigModal').onclick = () => {
+    // Check if anything was drawn
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const hasContent = imgData.some((v, i) => i % 4 === 3 && v > 0);
+    if (hasContent) {
+      state.sigData = canvas.toDataURL('image/png');
+      // If no image sig, also use drawn one on vault display
+      if (!state.sigImageData) {
+        const area = $('sigUploadArea');
+        area.innerHTML = `<img src="${state.sigData}" alt="signature">`;
+      }
+      saveSig();
+      toast('Signature saved', 'success');
+      updateA4Preview();
+    }
+    $('sigModal').classList.remove('active');
+  };
+}
+
+// ─── SHARE SCREEN ─────────────────────────────────────────────────────────────
+function setupShare() {
+  $('stampToggle').addEventListener('click', () => {
+    state.includeStamp = !state.includeStamp;
+    $('stampSwitch').classList.toggle('on', state.includeStamp);
+    updateA4Preview();
+  });
+  $('sigToggle').addEventListener('click', () => {
+    state.includeSig = !state.includeSig;
+    $('sigSwitch').classList.toggle('on', state.includeSig);
+    updateA4Preview();
+  });
+  $('btnGeneratePDF').addEventListener('click', generatePDF);
+  $('btnShareWA').addEventListener('click', shareWhatsApp);
+  $('recipientName').addEventListener('input', updateA4Preview);
+}
+
+function renderShareList() {
+  const list = $('shareIdList');
+  list.innerHTML = '';
+  IDS.forEach(id => {
+    const hasFront = !!state.docs[`${id.id}_${id.sides[0]}`];
+    const item = document.createElement('div');
+    item.className = `share-id-item${state.selectedShareId === id.id ? ' selected' : ''}`;
+    item.innerHTML = `
+      <div style="flex:1">
+        <div class="share-id-name">${id.name}</div>
+        <div class="share-id-sub">${hasFront ? id.sides.filter(s => state.docs[`${id.id}_${s}`]).join(' + ') + ' stored' : 'not stored'}</div>
+      </div>
+      <div class="share-id-check"></div>`;
+    item.addEventListener('click', () => {
+      if (!hasFront) { toast('Add this document first', 'error'); return; }
+      state.selectedShareId = id.id;
+      renderShareList();
+      updateA4Preview();
+    });
+    list.appendChild(item);
+  });
+}
+
+function renderShareLog() {
+  const el = $('shareLog');
+  if (!state.shareLog.length) {
+    el.innerHTML = `<div class="log-empty">No shares yet</div>`;
+    return;
+  }
+  el.innerHTML = state.shareLog.map(e => `
+    <div class="log-entry">
+      <div class="log-entry-top">
+        <span class="log-doc">${e.docName}</span>
+        <span class="log-date">${e.date}</span>
+      </div>
+      <div class="log-recipient">Shared with ${e.recipient}</div>
+    </div>`).join('');
+}
+
+// ─── A4 CANVAS ────────────────────────────────────────────────────────────────
+function updateA4Preview() {
+  const canvas = $('a4PreviewCanvas');
+  if (!state.selectedShareId) {
+    canvas.width = 210; canvas.height = 297;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#faf6f1';
+    ctx.fillRect(0, 0, 210, 297);
+    ctx.fillStyle = '#c0a880';
+    ctx.font = '10px DM Mono, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Select a document above', 105, 148);
+    return;
+  }
+  renderA4Canvas(canvas, false);
+}
+
+function renderA4Canvas(canvas, highRes = true) {
+  return new Promise(resolve => {
+    const scale = highRes ? 4 : 1;
+    const W = 595 * scale, H = 842 * scale;
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+
+    const idDef = IDS.find(i => i.id === state.selectedShareId);
+    if (!idDef) { resolve(); return; }
+
+    const sides = idDef.sides.filter(s => !!state.docs[`${idDef.id}_${s}`]);
+    if (!sides.length) { resolve(); return; }
+
+    const loadImgs = sides.map(s => new Promise(res => {
+      const img = new Image();
+      img.onload = () => res(img);
+      img.src = state.docs[`${idDef.id}_${s}`];
+    }));
+
+    Promise.all(loadImgs).then(imgs => {
+      const pad   = 36 * scale;
+      const areaW = W - pad * 2;
+      const imgCount = imgs.length;
+      // Single image takes up 55% height, double takes 42% each
+      const slotH = imgCount === 1 ? H * 0.52 : H * 0.40;
+      const topPad = imgCount === 1 ? (H - slotH) * 0.38 : pad + 16 * scale;
+      const gap   = 24 * scale;
+
+      // Track last drawn image bottom edge (for stamp/sig placement)
+      let lastImgBottom = topPad;
+
+      imgs.forEach((img, i) => {
+        const aspect = img.width / img.height;
+        let drawW = areaW, drawH = drawW / aspect;
+        if (drawH > slotH) { drawH = slotH; drawW = drawH * aspect; }
+        const drawX = (W - drawW) / 2;
+        const drawY = imgCount === 1 ? topPad : topPad + i * (slotH + gap);
+
+        // Subtle shadow
+        ctx.shadowColor = 'rgba(0,0,0,0.12)';
+        ctx.shadowBlur  = 8 * scale;
+        ctx.shadowOffsetY = 2 * scale;
+        ctx.drawImage(img, drawX, drawY, drawW, drawH);
+        ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+
+        lastImgBottom = drawY + drawH;
+
+        // Side label for multi-side docs
+        if (imgCount > 1) {
+          ctx.fillStyle = '#b8a088';
+          ctx.font = `${9 * scale}px DM Mono, monospace`;
+          ctx.textAlign = 'center';
+          ctx.fillText(sides[i].toUpperCase(), W / 2, drawY + drawH + 12 * scale);
+        }
+      });
+
+      // ─── STAMP + SIGNATURE ROW ───────────────────────────────────────────
+      // Both sit BELOW the last image, on the LEFT margin
+      const rowY   = lastImgBottom + 14 * scale;   // top of the row
+      const stampS = 66 * scale;                    // stamp size (approx 40mm)
+
+      if (state.includeStamp) {
+        drawSVGStamp(ctx, pad, rowY, stampS, scale);
+      }
+
+      const recipient = ($('recipientName')?.value || '').trim();
+      const activeSig = state.sigImageData || state.sigData;
+
+      if (state.includeSig && activeSig) {
+        const sigImg = new Image();
+        sigImg.onload = () => {
+          const sigW  = 130 * scale;
+          const sigH  = 46 * scale;
+          const sigX  = W - pad - sigW;
+          const sigY  = rowY + (stampS - sigH) / 2 - 6 * scale;
+          ctx.drawImage(sigImg, sigX, sigY, sigW, sigH);
+
+          if (recipient) {
+            ctx.fillStyle = '#a08060';
+            ctx.font      = `${8 * scale}px DM Mono, monospace`;
+            ctx.textAlign = 'right';
+            ctx.fillText(`Shared with ${recipient}`, W - pad, sigY + sigH + 12 * scale);
+          }
+          finishA4(ctx, W, H, scale, resolve, canvas);
+        };
+        sigImg.src = activeSig;
+      } else {
+        if (recipient && !state.includeSig) {
+          ctx.fillStyle = '#a08060';
+          ctx.font      = `${8 * scale}px DM Mono, monospace`;
+          ctx.textAlign = 'right';
+          ctx.fillText(`Shared with ${recipient}`, W - pad, rowY + 20 * scale);
+        }
+        finishA4(ctx, W, H, scale, resolve, canvas);
+      }
+    });
+  });
+}
+
+function finishA4(ctx, W, H, scale, resolve, canvas) {
+  ctx.fillStyle = '#c8b090';
+  ctx.font      = `${8 * scale}px DM Mono, monospace`;
+  ctx.textAlign = 'center';
+  ctx.fillText(
+    `Generated by KYC direct · ${new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })}`,
+    W / 2, H - 12 * scale
+  );
+  resolve(canvas);
+}
+
+// ─── STAMP (drawn on canvas, matching the approved SVG design) ────────────────
+function drawSVGStamp(ctx, x, y, size, scale) {
+  // size = full stamp diameter in canvas px
+  const cx = x + size / 2;
+  const cy = y + size / 2;
+  const r  = size / 2;
+
+  // White backing circle
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = 'white';
+  ctx.fill();
+
+  const navy   = '#1a3177';
+  const red    = '#dc2626';
+  const sw     = size * (20 / 300);   // stroke-width proportional to 300-unit viewbox
+  const outerR = size * (140 / 300);
+  const innerR = size * (90 / 300);
+  const midR   = size * (115 / 300);
+
+  // Outer ring
+  ctx.beginPath();
+  ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+  ctx.strokeStyle = navy; ctx.lineWidth = sw; ctx.stroke();
+
+  // Inner ring
+  ctx.beginPath();
+  ctx.arc(cx, cy, innerR, 0, Math.PI * 2);
+  ctx.strokeStyle = navy; ctx.lineWidth = sw; ctx.stroke();
+
+  // Stars at 9 and 3 o'clock
+  const starSize = size * (14 / 300);
+  ctx.font = `${starSize * 1.4}px serif`;
+  ctx.fillStyle = navy; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('★', cx - midR, cy);
+  ctx.fillText('★', cx + midR, cy);
+
+  // PHOTOCOPY — top arc
+  const topFontSize = size * (22 / 300);
+  ctx.font = `900 ${topFontSize}px Arial Black, sans-serif`;
+  ctx.fillStyle = navy;
+  ctx.textBaseline = 'middle';
+  drawArcText(ctx, 'PHOTOCOPY', cx, cy, midR, -Math.PI * 0.82, Math.PI * 0.82, false);
+
+  // SELF ATTESTED — bottom arc
+  const botFontSize = size * (20 / 300);
+  ctx.font = `900 ${botFontSize}px Arial Black, sans-serif`;
+  drawArcText(ctx, 'SELF ATTESTED', cx, cy, midR, Math.PI * 0.18, Math.PI * 0.82, true);
+
+  // Date in center
+  const today   = new Date();
+  const months  = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  const dateStr = `${String(today.getDate()).padStart(2,'0')} ${months[today.getMonth()]} ${String(today.getFullYear()).slice(2)}`;
+  const dateFontSize = size * (18 / 300);
+  ctx.font = `bold ${dateFontSize}px Arial, sans-serif`;
+  ctx.fillStyle = red;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(dateStr, cx, cy);
+}
+
+function drawArcText(ctx, text, cx, cy, radius, startAngle, endAngle, bottom) {
+  const chars    = text.split('');
+  const totalAngle = bottom ? (Math.PI - Math.PI * 0.36) : (Math.PI - Math.PI * 0.36);
+  const angleStep  = totalAngle / (chars.length - 1);
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+
+  chars.forEach((ch, i) => {
+    let angle;
+    if (bottom) {
+      // bottom arc: start from left (Math.PI + offset) go to right
+      angle = Math.PI * 0.18 + i * angleStep;
+    } else {
+      // top arc: start from left (-Math.PI + offset) go over top
+      angle = -Math.PI * 0.82 + i * angleStep;
+    }
+    const chX = cx + Math.cos(angle) * radius;
+    const chY = cy + Math.sin(angle) * radius;
+    ctx.save();
+    ctx.translate(chX, chY);
+    ctx.rotate(angle + (bottom ? -Math.PI / 2 : Math.PI / 2));
+    ctx.fillText(ch, 0, 0);
+    ctx.restore();
+  });
+}
+
+// ─── PDF GENERATION ───────────────────────────────────────────────────────────
+async function generatePDF() {
+  if (!state.selectedShareId) { toast('Select a document first', 'error'); return; }
+  const btn = $('btnGeneratePDF');
+  btn.textContent = 'Generating…';
+  btn.disabled = true;
+
+  try {
+    if (!window.jspdf) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+
+    const offCanvas = document.createElement('canvas');
+    await renderA4Canvas(offCanvas, true);
+    const imgData = offCanvas.toDataURL('image/jpeg', 0.93);
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+
+    const idName   = IDS.find(i => i.id === state.selectedShareId)?.name.replace(/\s+/g, '_') || 'KYC';
+    const filename = `KYC_direct_${idName}_${new Date().toISOString().slice(0,10)}.pdf`;
+    pdf.save(filename);
+
+    const recipient = ($('recipientName')?.value || '').trim();
+    addLogEntry(IDS.find(i => i.id === state.selectedShareId)?.name, recipient || '—');
+    toast('PDF downloaded!', 'success');
+  } catch(e) {
+    toast('Error generating PDF', 'error');
+    console.error(e);
+  } finally {
+    btn.textContent = 'Download PDF';
+    btn.disabled = false;
+  }
+}
+
+async function shareWhatsApp() {
+  if (!state.selectedShareId) { toast('Select a document first', 'error'); return; }
+  const btn = $('btnShareWA');
+  btn.disabled = true;
+
+  try {
+    if (!window.jspdf) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+
+    const offCanvas = document.createElement('canvas');
+    await renderA4Canvas(offCanvas, true);
+    const imgData = offCanvas.toDataURL('image/jpeg', 0.93);
+
+    const { jsPDF } = window.jspdf;
+    const pdf    = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+
+    const idName = IDS.find(i => i.id === state.selectedShareId)?.name || 'KYC';
+    const blob   = pdf.output('blob');
+    const file   = new File([blob], `KYC_direct_${idName}.pdf`, { type: 'application/pdf' });
+
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: `KYC direct — ${idName}`, text: 'Please find my KYC document attached.' });
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = file.name; a.click();
+      setTimeout(() => window.open('https://web.whatsapp.com', '_blank'), 800);
+    }
+
+    const recipient = ($('recipientName')?.value || '').trim();
+    addLogEntry(idName, recipient || '—');
+    toast('Shared!', 'success');
+  } catch(e) {
+    if (e.name !== 'AbortError') toast('Share failed', 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+}
