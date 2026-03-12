@@ -580,23 +580,36 @@ function renderA4Canvas(canvas, highRes = true) {
     }));
 
     Promise.all(loadImgs).then(imgs => {
-      const pad   = 36 * scale;
-      const areaW = W - pad * 2;
+      const pad      = 40 * scale;
+      const areaW    = W - pad * 2;
       const imgCount = imgs.length;
-      // Single image takes up 55% height, double takes 42% each
-      const slotH = imgCount === 1 ? H * 0.52 : H * 0.40;
-      const topPad = imgCount === 1 ? (H - slotH) * 0.38 : pad + 16 * scale;
-      const gap   = 24 * scale;
+      // Max height per image slot — leave bottom 22% for stamp row
+      const maxSlotH = imgCount === 1 ? H * 0.56 : H * 0.36;
+      const gap      = 28 * scale;
 
-      // Track last drawn image bottom edge (for stamp/sig placement)
-      let lastImgBottom = topPad;
-
-      imgs.forEach((img, i) => {
+      // Fit each image to natural proportions within (areaW × maxSlotH)
+      const fitted = imgs.map(img => {
         const aspect = img.width / img.height;
         let drawW = areaW, drawH = drawW / aspect;
-        if (drawH > slotH) { drawH = slotH; drawW = drawH * aspect; }
+        if (drawH > maxSlotH) { drawH = maxSlotH; drawW = drawH * aspect; }
+        if (drawW > areaW)    { drawW = areaW;    drawH = drawW / aspect; }
+        return { drawW, drawH };
+      });
+
+      // Total height of image block
+      const totalImgH = fitted.reduce((s, f) => s + f.drawH, 0) + gap * (imgCount - 1);
+      // Centre image block in top ~78% of page
+      const availH = H * 0.78;
+      const topPad = (availH - totalImgH) / 2;
+
+      // Track last drawn image bottom edge
+      let lastImgBottom = topPad;
+      let runY = topPad;
+
+      imgs.forEach((img, i) => {
+        const { drawW, drawH } = fitted[i];
         const drawX = (W - drawW) / 2;
-        const drawY = imgCount === 1 ? topPad : topPad + i * (slotH + gap);
+        const drawY = runY;
 
         // Subtle shadow
         ctx.shadowColor = 'rgba(0,0,0,0.12)';
@@ -606,20 +619,21 @@ function renderA4Canvas(canvas, highRes = true) {
         ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
 
         lastImgBottom = drawY + drawH;
+        runY = lastImgBottom + gap;
 
         // Side label for multi-side docs
         if (imgCount > 1) {
           ctx.fillStyle = '#b8a088';
           ctx.font = `${9 * scale}px DM Mono, monospace`;
           ctx.textAlign = 'center';
-          ctx.fillText(sides[i].toUpperCase(), W / 2, drawY + drawH + 12 * scale);
+          ctx.fillText(sides[i].toUpperCase(), W / 2, drawY + drawH + 14 * scale);
         }
       });
 
       // ─── STAMP + SIGNATURE ROW ───────────────────────────────────────────
       // Both sit BELOW the last image, on the LEFT margin
       const rowY   = lastImgBottom + 18 * scale;   // top of the row
-      const stampS = 110 * scale;                   // stamp size — bigger (~65mm)
+      const stampS = 108 * scale;                   // stamp size = 1.5 inches on A4
 
       if (state.includeStamp) {
         drawSVGStamp(ctx, pad, rowY, stampS, scale);
@@ -638,7 +652,7 @@ function renderA4Canvas(canvas, highRes = true) {
           ctx.drawImage(sigImg, sigX, sigY, sigW, sigH);
 
           if (recipient) {
-            ctx.fillStyle = '#8c6844';
+            ctx.fillStyle = '#1a3177';
             ctx.font      = `bold ${14 * scale}px DM Mono, monospace`;
             ctx.textAlign = 'right';
             ctx.fillText(`Shared with ${recipient}`, W - pad, sigY + sigH + 18 * scale);
@@ -648,7 +662,7 @@ function renderA4Canvas(canvas, highRes = true) {
         sigImg.src = activeSig;
       } else {
         if (recipient) {
-          ctx.fillStyle = '#8c6844';
+          ctx.fillStyle = '#1a3177';
           ctx.font      = `bold ${14 * scale}px DM Mono, monospace`;
           ctx.textAlign = 'right';
           ctx.fillText(`Shared with ${recipient}`, W - pad, rowY + 30 * scale);
