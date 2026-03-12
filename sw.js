@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kycdirect-v3';
+const CACHE_NAME = 'kycdirect-v9';
 const BASE = '/kyc-direct';
 const ASSETS = [
   `${BASE}/`,
