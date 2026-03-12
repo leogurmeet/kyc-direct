@@ -100,6 +100,16 @@
 
         <button class="leo-btn-outline" id="btnOpenSigPad" style="width:100%;margin-bottom:14px">Draw / Update Signature</button>
 
+        <div class="field-label">Image Size</div>
+        <div class="zoom-row">
+          <button class="zoom-btn" id="btnZoomMinus">−</button>
+          <input class="zoom-input" id="zoomInput" type="number" value="100" min="50" max="200">
+          <span class="zoom-pct">%</span>
+          <button class="zoom-btn" id="btnZoomPlus">+</button>
+          <button class="zoom-reset" id="btnZoomReset">Reset</button>
+        </div>
+        <div class="field-hint" style="margin-bottom:14px">Actual card size at 100% · per document</div>
+
         <div class="field-label">Preview</div>
         <div class="preview-wrap">
           <canvas id="a4PreviewCanvas"></canvas>

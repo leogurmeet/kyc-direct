@@ -22,6 +22,7 @@ let state = {
   includeStamp: true,
   includeSig: true,
   shareLog: [],           // [{ docName, recipient, date }]
+  docZoom: {},            // { [docId]: number 50–200 } per-document zoom %
 };
 
 // ─── PERSISTENCE ──────────────────────────────────────────────────────────────
@@ -484,6 +485,17 @@ function setupSig() {
   };
 }
 
+// ─── ZOOM HELPERS ─────────────────────────────────────────────────────────────
+function getZoom() {
+  return state.docZoom[state.selectedShareId] || 100;
+}
+function setZoom(val) {
+  const z = Math.min(200, Math.max(50, Math.round(val)));
+  state.docZoom[state.selectedShareId] = z;
+  $('zoomInput').value = z;
+  updateA4Preview();
+}
+
 // ─── SHARE SCREEN ─────────────────────────────────────────────────────────────
 function setupShare() {
   $('stampToggle').addEventListener('click', () => {
@@ -499,6 +511,13 @@ function setupShare() {
   $('btnGeneratePDF').addEventListener('click', generatePDF);
   $('btnShareWA').addEventListener('click', shareWhatsApp);
   $('recipientName').addEventListener('input', updateA4Preview);
+
+  // Zoom controls
+  $('btnZoomMinus').addEventListener('click', () => setZoom(getZoom() - 5));
+  $('btnZoomPlus').addEventListener('click',  () => setZoom(getZoom() + 5));
+  $('zoomInput').addEventListener('change', e => setZoom(parseInt(e.target.value) || 100));
+  $('zoomInput').addEventListener('input',  e => { if (e.target.value.length >= 2) setZoom(parseInt(e.target.value) || 100); });
+  $('btnZoomReset').addEventListener('click', () => setZoom(100));
 }
 
 function renderShareList() {
@@ -517,6 +536,7 @@ function renderShareList() {
     item.addEventListener('click', () => {
       if (!hasFront) { toast('Add this document first', 'error'); return; }
       state.selectedShareId = id.id;
+      $('zoomInput').value = getZoom();
       renderShareList();
       updateA4Preview();
     });
@@ -583,26 +603,38 @@ function renderA4Canvas(canvas, highRes = true) {
       const pad      = 40 * scale;
       const areaW    = W - pad * 2;
       const imgCount = imgs.length;
-      // Max height per image slot — leave bottom 22% for stamp row
-      const maxSlotH = imgCount === 1 ? H * 0.56 : H * 0.36;
       const gap      = 28 * scale;
 
-      // Fit each image to natural proportions within (areaW × maxSlotH)
+      // ── Real ID card physical size ──────────────────────────────────────────
+      // A4 = 210mm wide. Canvas W = 595*scale pts. So 1mm = (595*scale/210) pts
+      const mmToPx   = (595 * scale) / 210;
+      // Standard CR80 card = 85.6mm × 54mm
+      const cardW_mm = 85.6;
+      const cardH_mm = 54.0;
+      const zoom     = (state.docZoom[state.selectedShareId] || 100) / 100;
+      const baseCardW = cardW_mm * mmToPx * zoom;
+      const baseCardH = cardH_mm * mmToPx * zoom;
+
+      // Cap to available area
+      const maxSlotH = imgCount === 1 ? H * 0.56 : H * 0.36;
+
       const fitted = imgs.map(img => {
-        const aspect = img.width / img.height;
-        let drawW = areaW, drawH = drawW / aspect;
-        if (drawH > maxSlotH) { drawH = maxSlotH; drawW = drawH * aspect; }
-        if (drawW > areaW)    { drawW = areaW;    drawH = drawW / aspect; }
+        const imgAspect  = img.width / img.height;
+        const cardAspect = baseCardW / baseCardH;
+        // Use card aspect if image is close to card ratio, else use image's own ratio
+        const useAspect  = Math.abs(imgAspect - cardAspect) < 0.4 ? cardAspect : imgAspect;
+        let drawW = baseCardW;
+        let drawH = drawW / useAspect;
+        // Enforce max constraints
+        if (drawW > areaW)    { drawW = areaW;    drawH = drawW / useAspect; }
+        if (drawH > maxSlotH) { drawH = maxSlotH; drawW = drawH * useAspect; }
         return { drawW, drawH };
       });
 
-      // Total height of image block
       const totalImgH = fitted.reduce((s, f) => s + f.drawH, 0) + gap * (imgCount - 1);
-      // Centre image block in top ~78% of page
-      const availH = H * 0.78;
-      const topPad = (availH - totalImgH) / 2;
+      const availH    = H * 0.78;
+      const topPad    = Math.max(pad, (availH - totalImgH) / 2);
 
-      // Track last drawn image bottom edge
       let lastImgBottom = topPad;
       let runY = topPad;
 
@@ -611,17 +643,18 @@ function renderA4Canvas(canvas, highRes = true) {
         const drawX = (W - drawW) / 2;
         const drawY = runY;
 
-        // Subtle shadow
-        ctx.shadowColor = 'rgba(0,0,0,0.12)';
-        ctx.shadowBlur  = 8 * scale;
+        // ── Auto-optimise image before drawing ──────────────────────────────
+        const optCanvas = autoOptimise(img);
+
+        ctx.shadowColor   = 'rgba(0,0,0,0.12)';
+        ctx.shadowBlur    = 8 * scale;
         ctx.shadowOffsetY = 2 * scale;
-        ctx.drawImage(img, drawX, drawY, drawW, drawH);
+        ctx.drawImage(optCanvas, drawX, drawY, drawW, drawH);
         ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
 
         lastImgBottom = drawY + drawH;
         runY = lastImgBottom + gap;
 
-        // Side label for multi-side docs
         if (imgCount > 1) {
           ctx.fillStyle = '#b8a088';
           ctx.font = `${9 * scale}px DM Mono, monospace`;
@@ -630,10 +663,9 @@ function renderA4Canvas(canvas, highRes = true) {
         }
       });
 
-      // ─── STAMP + SIGNATURE ROW ───────────────────────────────────────────
-      // Both sit BELOW the last image, on the LEFT margin
-      const rowY   = lastImgBottom + 18 * scale;   // top of the row
-      const stampS = 108 * scale;                   // stamp size = 1.5 inches on A4
+      // ── STAMP + SIGNATURE ROW ────────────────────────────────────────────
+      const rowY   = lastImgBottom + 18 * scale;
+      const stampS = 108 * scale;
 
       if (state.includeStamp) {
         drawSVGStamp(ctx, pad, rowY, stampS, scale);
@@ -645,12 +677,11 @@ function renderA4Canvas(canvas, highRes = true) {
       if (state.includeSig && activeSig) {
         const sigImg = new Image();
         sigImg.onload = () => {
-          const sigW  = 180 * scale;
-          const sigH  = 64 * scale;
-          const sigX  = W - pad - sigW;
-          const sigY  = rowY + (stampS - sigH) / 2 - 6 * scale;
+          const sigW = 180 * scale;
+          const sigH = 64 * scale;
+          const sigX = W - pad - sigW;
+          const sigY = rowY + (stampS - sigH) / 2 - 6 * scale;
           ctx.drawImage(sigImg, sigX, sigY, sigW, sigH);
-
           if (recipient) {
             ctx.fillStyle = '#1a3177';
             ctx.font      = `bold ${14 * scale}px DM Mono, monospace`;
@@ -671,6 +702,81 @@ function renderA4Canvas(canvas, highRes = true) {
       }
     });
   });
+}
+
+// ─── AUTO IMAGE OPTIMISATION ──────────────────────────────────────────────────
+// Applies auto-levels, white balance correction, contrast stretch and sharpening
+function autoOptimise(img) {
+  const oc  = document.createElement('canvas');
+  oc.width  = img.width;
+  oc.height = img.height;
+  const ctx = oc.getContext('2d');
+  ctx.drawImage(img, 0, 0);
+
+  const imageData = ctx.getImageData(0, 0, oc.width, oc.height);
+  const d = imageData.data;
+  const len = d.length;
+
+  // ── Step 1: Build per-channel histograms ──────────────────────────────────
+  const histR = new Int32Array(256), histG = new Int32Array(256), histB = new Int32Array(256);
+  for (let i = 0; i < len; i += 4) {
+    histR[d[i]]++;  histG[d[i+1]]++;  histB[d[i+2]]++;
+  }
+
+  // ── Step 2: Find 1%–99% percentile clip points per channel ───────────────
+  const pixels  = (len / 4);
+  const clipLow  = pixels * 0.01;
+  const clipHigh = pixels * 0.99;
+
+  function percentile(hist, lo, hi) {
+    let cum = 0, low = 0, high = 255;
+    for (let i = 0; i < 256; i++) { cum += hist[i]; if (cum >= lo && low === 0) low = i; }
+    cum = 0;
+    for (let i = 255; i >= 0; i--) { cum += hist[i]; if (cum >= (pixels - hi) && high === 255) high = i; }
+    return [low, high];
+  }
+
+  const [rLo, rHi] = percentile(histR, clipLow, clipHigh);
+  const [gLo, gHi] = percentile(histG, clipLow, clipHigh);
+  const [bLo, bHi] = percentile(histB, clipLow, clipHigh);
+
+  // ── Step 3: Build LUT (look-up table) per channel ─────────────────────────
+  function makeLUT(lo, hi) {
+    const lut = new Uint8ClampedArray(256);
+    const range = hi - lo || 1;
+    for (let i = 0; i < 256; i++) lut[i] = Math.min(255, Math.max(0, Math.round((i - lo) * 255 / range)));
+    return lut;
+  }
+  const lutR = makeLUT(rLo, rHi);
+  const lutG = makeLUT(gLo, gHi);
+  const lutB = makeLUT(bLo, bHi);
+
+  // ── Step 4: Apply LUTs ────────────────────────────────────────────────────
+  for (let i = 0; i < len; i += 4) {
+    d[i]   = lutR[d[i]];
+    d[i+1] = lutG[d[i+1]];
+    d[i+2] = lutB[d[i+2]];
+  }
+
+  // ── Step 5: Mild unsharp mask for text crispness ─────────────────────────
+  const tmp = new Uint8ClampedArray(d);
+  const w = oc.width, h = oc.height;
+  const amount = 0.4;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const idx = (y * w + x) * 4;
+      for (let c = 0; c < 3; c++) {
+        const center = tmp[idx + c];
+        const neighbors = tmp[((y-1)*w+x)*4+c] + tmp[((y+1)*w+x)*4+c] +
+                          tmp[(y*w+x-1)*4+c]   + tmp[(y*w+x+1)*4+c];
+        const blurred = neighbors / 4;
+        d[idx + c] = Math.min(255, Math.max(0, Math.round(center + amount * (center - blurred))));
+      }
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+  return oc;
 }
 
 function finishA4(ctx, W, H, scale, resolve, canvas) {

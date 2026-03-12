@@ -613,3 +613,52 @@ input[type=range]::-webkit-slider-thumb {
 ::-webkit-scrollbar { width: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--btn-bg); border-radius: 2px; }
+
+/* ─── ZOOM CONTROLS ─────────────────────────────────────────────────────────── */
+.zoom-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.zoom-btn {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border-mid);
+  background: var(--input-bg);
+  color: var(--text);
+  font-size: 20px; font-weight: 700;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.zoom-btn:active { background: var(--button-bg); }
+.zoom-input {
+  width: 64px; height: 40px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border-mid);
+  background: var(--input-bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 16px; font-weight: 700;
+  text-align: center;
+  -moz-appearance: textfield;
+}
+.zoom-input::-webkit-inner-spin-button,
+.zoom-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+.zoom-pct {
+  font-family: var(--font-mono);
+  font-size: 14px; font-weight: 700;
+  color: var(--text-mid);
+}
+.zoom-reset {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
