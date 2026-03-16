@@ -662,3 +662,176 @@ input[type=range]::-webkit-slider-thumb {
   text-decoration: underline;
   padding: 0;
 }
+
+/* ─── STORAGE INDICATOR ─────────────────────────────────────────────────────── */
+.storage-bar-wrap {
+  background: var(--input-bg);
+  border-radius: 99px;
+  height: 8px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.storage-bar-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #8c6844, #c0924a);
+  width: 0%;
+  transition: width 0.5s ease;
+}
+.storage-bar-fill.warn   { background: linear-gradient(90deg, #b87a20, #e09030); }
+.storage-bar-fill.danger { background: linear-gradient(90deg, #c0392b, #e05030); }
+.storage-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.storage-note {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+/* ─── BACKUP BUTTONS ────────────────────────────────────────────────────────── */
+.backup-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.backup-btn {
+  flex: 1;
+  font-size: 13px;
+}
+
+/* ─── PRIVACY CARD ──────────────────────────────────────────────────────────── */
+.privacy-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--input-bg);
+  border-radius: 14px;
+  border: 1.5px solid var(--border);
+  cursor: pointer;
+  margin-bottom: 8px;
+  user-select: none;
+}
+.privacy-icon {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--text-mid);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+  color: var(--text-mid);
+  flex-shrink: 0;
+}
+.privacy-toggle-label {
+  font-size: 13px; font-weight: 700;
+  color: var(--text-mid);
+  flex: 1;
+}
+.privacy-chevron {
+  font-size: 11px;
+  color: var(--text-muted);
+  transition: transform 0.25s;
+}
+.privacy-chevron.open { transform: rotate(180deg); }
+.privacy-card {
+  background: var(--input-bg);
+  border-radius: 14px;
+  border: 1.5px solid var(--border);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.privacy-heading {
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 1px; text-transform: uppercase;
+  color: var(--text-mid);
+  margin-bottom: 12px;
+}
+.privacy-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+  align-items: flex-start;
+}
+.privacy-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #8c6844;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+.privacy-text {
+  font-size: 12px;
+  color: var(--text-mid);
+  line-height: 1.6;
+}
+.privacy-warn {
+  background: rgba(180,100,40,0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 6px;
+}
+.privacy-warn-text {
+  font-size: 11px;
+  color: #8c4a10;
+  line-height: 1.6;
+}
+
+/* ─── PIN PAD ───────────────────────────────────────────────────────────────── */
+.pin-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  margin-bottom: 20px;
+  margin-top: -8px;
+}
+.pin-dots {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.pin-dot {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--border-mid);
+  background: transparent;
+  transition: background 0.15s;
+}
+.pin-dot.filled { background: var(--text-mid); border-color: var(--text-mid); }
+.pin-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.pin-key {
+  height: 56px;
+  border-radius: 14px;
+  border: 1.5px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 20px; font-weight: 700;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.pin-key:active { background: var(--button-bg); }
+.pin-skip {
+  font-size: 12px; font-weight: 700;
+  color: var(--text-muted);
+}
+.pin-del { font-size: 18px; }
+
+/* ─── NUDGE MODAL ───────────────────────────────────────────────────────────── */
+.nudge-text {
+  font-size: 13px;
+  color: var(--text-mid);
+  line-height: 1.6;
+  text-align: center;
+  margin-bottom: 20px;
+  padding: 0 4px;
+}

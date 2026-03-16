@@ -84,6 +84,9 @@ document.addEventListener('DOMContentLoaded', () => {
   setupSig();
   setupShare();
   setupSigUpload();
+  setupBackup();
+  setupPrivacyToggle();
+  updateStorageBar();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 });
 
@@ -388,13 +391,29 @@ function applyCrop() {
   final.width = cropW; final.height = cropH;
   final.getContext('2d').drawImage(off, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
-  const dataURL = final.toDataURL('image/jpeg', 0.92);
+  // Cap resolution to 1600px wide before optimising — prevents freezing on large phone photos
+  const MAX_W = 1600;
+  let finalOpt = final;
+  if (final.width > MAX_W) {
+    const ratio = MAX_W / final.width;
+    const scaled = document.createElement('canvas');
+    scaled.width  = MAX_W;
+    scaled.height = Math.round(final.height * ratio);
+    scaled.getContext('2d').drawImage(final, 0, 0, scaled.width, scaled.height);
+    finalOpt = scaled;
+  }
+
+  // Auto-optimise once at save time — never again on render
+  const optimised = autoOptimise(finalOpt);
+  const dataURL = optimised.toDataURL('image/jpeg', 0.92);
   state.docs[cropTargetKey] = dataURL;
   saveState();
   renderDocSide();
   renderVault();
   $('cropModal').classList.remove('active');
   toast('Saved', 'success');
+  updateStorageBar();
+  setTimeout(() => showNudge(), 900);
 }
 
 function applySharpness(ctx, w, h, amount) {
@@ -643,13 +662,11 @@ function renderA4Canvas(canvas, highRes = true) {
         const drawX = (W - drawW) / 2;
         const drawY = runY;
 
-        // ── Auto-optimise image before drawing ──────────────────────────────
-        const optCanvas = autoOptimise(img);
-
+        // Image already auto-optimised at upload time — draw directly
         ctx.shadowColor   = 'rgba(0,0,0,0.12)';
         ctx.shadowBlur    = 8 * scale;
         ctx.shadowOffsetY = 2 * scale;
-        ctx.drawImage(optCanvas, drawX, drawY, drawW, drawH);
+        ctx.drawImage(img, drawX, drawY, drawW, drawH);
         ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
 
         lastImgBottom = drawY + drawH;
@@ -948,4 +965,212 @@ function loadScript(src) {
     s.src = src; s.onload = res; s.onerror = rej;
     document.head.appendChild(s);
   });
+}
+
+// ─── STORAGE INDICATOR ────────────────────────────────────────────────────────
+function updateStorageBar() {
+  try {
+    let total = 0;
+    for (const key of [DB_KEY, SIG_KEY, LOG_KEY]) {
+      const v = localStorage.getItem(key);
+      if (v) total += v.length * 2; // UTF-16: 2 bytes per char
+    }
+    const maxBytes = 5 * 1024 * 1024;
+    const pct = Math.min(100, (total / maxBytes) * 100);
+    const fill = $('storageFill');
+    const used = $('storageUsed');
+    if (!fill || !used) return;
+    fill.style.width = pct + '%';
+    fill.className = 'storage-bar-fill' + (pct >= 90 ? ' danger' : pct >= 70 ? ' warn' : '');
+    const kb = total / 1024;
+    used.textContent = kb >= 1024 ? (kb / 1024).toFixed(1) + ' MB used' : Math.round(kb) + ' KB used';
+  } catch(e) {}
+}
+
+// ─── PRIVACY TOGGLE ───────────────────────────────────────────────────────────
+function setupPrivacyToggle() {
+  $('privacyToggle').addEventListener('click', () => {
+    const card    = $('privacyCard');
+    const chevron = $('privacyChevron');
+    const open    = card.style.display === 'none';
+    card.style.display = open ? 'block' : 'none';
+    chevron.classList.toggle('open', open);
+  });
+}
+
+// ─── BACKUP — PIN STATE ───────────────────────────────────────────────────────
+let pinBuffer   = '';
+let pinMode     = null; // 'export-set' | 'export-confirm' | 'import'
+let pinFirst    = '';
+let pinCallback = null;
+
+function openPinModal(title, sub, callback) {
+  pinBuffer = ''; pinFirst = ''; pinMode = 'custom';
+  pinCallback = callback;
+  $('pinModalTitle').textContent = title;
+  $('pinModalSub').textContent   = sub;
+  updatePinDots();
+  $('pinModal').classList.add('active');
+}
+
+function updatePinDots() {
+  for (let i = 0; i < 4; i++) {
+    $('pd' + i).classList.toggle('filled', i < pinBuffer.length);
+  }
+}
+
+function setupBackup() {
+  // PIN pad keys
+  document.querySelectorAll('.pin-key[data-n]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (pinBuffer.length >= 4) return;
+      pinBuffer += btn.dataset.n;
+      updatePinDots();
+      if (pinBuffer.length === 4) setTimeout(handlePinComplete, 200);
+    });
+  });
+  $('pinDel').addEventListener('click', () => {
+    pinBuffer = pinBuffer.slice(0, -1);
+    updatePinDots();
+  });
+  $('pinSkip').addEventListener('click', () => {
+    $('pinModal').classList.remove('active');
+    if (pinCallback) pinCallback(null);
+  });
+
+  // Export backup
+  $('btnExportBackup').addEventListener('click', () => {
+    const hasData = Object.keys(state.docs).length > 0;
+    if (!hasData) { toast('Nothing to backup yet', 'error'); return; }
+    pinFirst = '';
+    openPinModal('Set Backup PIN', 'Enter a 4-digit PIN to protect your backup. Tap Skip for no PIN.', null);
+    pinMode = 'export-set';
+  });
+
+  // Import backup
+  $('btnImportBackup').addEventListener('click', () => $('backupFileInput').click());
+  $('backupFileInput').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const raw = JSON.parse(ev.target.result);
+        if (raw.protected) {
+          openPinModal('Enter Backup PIN', 'This backup is PIN protected.', pin => {
+            if (pin === null) { toast('Import cancelled', ''); return; }
+            const dec = xorDecrypt(raw.data, pin);
+            try {
+              const payload = JSON.parse(dec);
+              restoreBackup(payload);
+            } catch(e) {
+              toast('Wrong PIN', 'error');
+            }
+          });
+          pinMode = 'import-custom';
+        } else {
+          restoreBackup(raw.data);
+        }
+      } catch(e) {
+        toast('Invalid backup file', 'error');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  });
+
+  // Nudge modal
+  $('btnNudgeLater').addEventListener('click',  () => $('nudgeModal').classList.remove('active'));
+  $('btnNudgeBackup').addEventListener('click', () => {
+    $('nudgeModal').classList.remove('active');
+    $('btnExportBackup').click();
+  });
+}
+
+function handlePinComplete() {
+  if (pinMode === 'export-set') {
+    pinFirst  = pinBuffer;
+    pinBuffer = '';
+    updatePinDots();
+    $('pinModalTitle').textContent = 'Confirm PIN';
+    $('pinModalSub').textContent   = 'Re-enter your 4-digit PIN to confirm';
+    pinMode = 'export-confirm';
+  } else if (pinMode === 'export-confirm') {
+    if (pinBuffer !== pinFirst) {
+      toast('PINs do not match', 'error');
+      pinBuffer = ''; pinFirst = '';
+      updatePinDots();
+      $('pinModalTitle').textContent = 'Set Backup PIN';
+      $('pinModalSub').textContent   = 'PINs did not match. Try again.';
+      pinMode = 'export-set';
+      return;
+    }
+    const pin = pinBuffer;
+    $('pinModal').classList.remove('active');
+    doExportBackup(pin);
+  } else if (pinMode === 'import-custom') {
+    const pin = pinBuffer;
+    $('pinModal').classList.remove('active');
+    if (pinCallback) pinCallback(pin);
+  }
+}
+
+function doExportBackup(pin) {
+  const payload = {
+    version: 2,
+    exported: new Date().toISOString(),
+    docs: state.docs,
+    sig: { drawn: state.sigData, image: state.sigImageData },
+    log: state.shareLog,
+  };
+  const date = new Date().toISOString().slice(0, 10);
+  let fileContent, filename;
+
+  if (pin) {
+    const encrypted = xorEncrypt(JSON.stringify(payload), pin);
+    fileContent = JSON.stringify({ protected: true, data: encrypted });
+    filename = `kycdirect-backup-${date}.json`;
+  } else {
+    fileContent = JSON.stringify({ protected: false, data: payload });
+    filename = `kycdirect-backup-${date}.json`;
+  }
+
+  const blob = new Blob([fileContent], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  toast('Backup exported!', 'success');
+}
+
+function restoreBackup(payload) {
+  try {
+    if (payload.docs)  { state.docs = payload.docs; saveState(); }
+    if (payload.sig)   { state.sigData = payload.sig.drawn || null; state.sigImageData = payload.sig.image || null; saveSig(); }
+    if (payload.log)   { state.shareLog = payload.log; saveLog(); }
+    renderVault();
+    renderShareList();
+    renderShareLog();
+    updateStorageBar();
+    toast('Backup restored!', 'success');
+  } catch(e) {
+    toast('Restore failed', 'error');
+  }
+}
+
+// Simple XOR cipher with PIN as key — sufficient for local backup protection
+function xorEncrypt(str, pin) {
+  const key = pin.split('').map(Number);
+  return btoa(str.split('').map((c, i) => String.fromCharCode(c.charCodeAt(0) ^ (key[i % key.length] + 47))).join(''));
+}
+function xorDecrypt(encoded, pin) {
+  const key = pin.split('').map(Number);
+  const str = atob(encoded);
+  return str.split('').map((c, i) => String.fromCharCode(c.charCodeAt(0) ^ (key[i % key.length] + 47))).join('');
+}
+
+// ─── NUDGE ────────────────────────────────────────────────────────────────────
+function showNudge() {
+  const docCount = Object.keys(state.docs).length;
+  if (docCount > 0) $('nudgeModal').classList.add('active');
 }

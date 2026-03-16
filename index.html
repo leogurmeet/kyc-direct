@@ -51,6 +51,50 @@
           <span class="sig-upload-txt">tap to upload signature image</span>
         </div>
         <div class="field-hint">used on exported PDF</div>
+
+        <!-- STORAGE INDICATOR -->
+        <div class="leo-divider"><span class="leo-divider-lbl">Storage</span></div>
+        <div class="storage-bar-wrap">
+          <div class="storage-bar-fill" id="storageFill"></div>
+        </div>
+        <div class="storage-meta">
+          <span id="storageUsed">0 KB used</span>
+          <span id="storageLimit">5 MB limit</span>
+        </div>
+        <div class="storage-note">Documents saved locally on this device only</div>
+
+        <!-- BACKUP BUTTONS -->
+        <div class="backup-row">
+          <button class="leo-btn-outline backup-btn" id="btnExportBackup">Export Backup</button>
+          <button class="leo-btn-outline backup-btn" id="btnImportBackup">Import Backup</button>
+        </div>
+        <input type="file" id="backupFileInput" accept=".json" style="display:none">
+
+        <!-- PRIVACY INFO -->
+        <div class="privacy-toggle" id="privacyToggle">
+          <div class="privacy-icon">i</div>
+          <div class="privacy-toggle-label">Privacy &amp; Storage Info</div>
+          <div class="privacy-chevron" id="privacyChevron">▼</div>
+        </div>
+        <div class="privacy-card" id="privacyCard" style="display:none">
+          <div class="privacy-heading">Where is my data stored?</div>
+          <div class="privacy-row">
+            <div class="privacy-dot"></div>
+            <div class="privacy-text">All documents, signature and share history are saved <strong>only on this device</strong> in your browser's local storage.</div>
+          </div>
+          <div class="privacy-row">
+            <div class="privacy-dot"></div>
+            <div class="privacy-text"><strong>Nothing is uploaded</strong> to any server. No account required. No internet needed after first load.</div>
+          </div>
+          <div class="privacy-row">
+            <div class="privacy-dot"></div>
+            <div class="privacy-text">Your documents are <strong>never shared</strong> without your action. Each PDF is generated entirely on your device.</div>
+          </div>
+          <div class="privacy-warn">
+            <div class="privacy-warn-text">Clearing browser data or uninstalling the app will erase all stored documents. Use Export Backup to keep a safe copy.</div>
+          </div>
+        </div>
+
       </div>
 
       <!-- DOC DETAIL -->
@@ -181,3 +225,45 @@
 <script src="app.js"></script>
 </body>
 </html>
+
+<!-- PIN MODAL -->
+<div class="modal-overlay" id="pinModal">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="pinModalTitle">Set Backup PIN</div>
+    <div class="pin-sub" id="pinModalSub">Enter a 4-digit PIN to protect your backup</div>
+    <div class="pin-dots" id="pinDots">
+      <div class="pin-dot" id="pd0"></div>
+      <div class="pin-dot" id="pd1"></div>
+      <div class="pin-dot" id="pd2"></div>
+      <div class="pin-dot" id="pd3"></div>
+    </div>
+    <div class="pin-pad">
+      <button class="pin-key" data-n="1">1</button>
+      <button class="pin-key" data-n="2">2</button>
+      <button class="pin-key" data-n="3">3</button>
+      <button class="pin-key" data-n="4">4</button>
+      <button class="pin-key" data-n="5">5</button>
+      <button class="pin-key" data-n="6">6</button>
+      <button class="pin-key" data-n="7">7</button>
+      <button class="pin-key" data-n="8">8</button>
+      <button class="pin-key" data-n="9">9</button>
+      <button class="pin-key pin-skip" id="pinSkip">Skip</button>
+      <button class="pin-key" data-n="0">0</button>
+      <button class="pin-key pin-del" id="pinDel">⌫</button>
+    </div>
+  </div>
+</div>
+
+<!-- BACKUP NUDGE MODAL -->
+<div class="modal-overlay" id="nudgeModal">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Back up your vault?</div>
+    <div class="nudge-text">You added a new document. Export a backup so your data is safe if browser storage is cleared.</div>
+    <div class="modal-actions">
+      <button class="leo-btn-outline" id="btnNudgeLater">Later</button>
+      <button class="leo-btn" id="btnNudgeBackup">Export Now</button>
+    </div>
+  </div>
+</div>
