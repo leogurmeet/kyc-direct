@@ -38,7 +38,9 @@ function loadState() {
 }
 
 function saveState() {
-  try { localStorage.setItem(DB_KEY, JSON.stringify(state.docs)); } catch(e) { toast('Storage full', 'error'); }
+  setTimeout(() => {
+    try { localStorage.setItem(DB_KEY, JSON.stringify(state.docs)); } catch(e) { toast('Storage full', 'error'); }
+  }, 0);
 }
 
 function saveSig() {
@@ -226,8 +228,26 @@ function triggerCamera(key) {
 
 function handleImageFile(file, key) {
   if (!file) return;
+  if (file.size > 2 * 1024 * 1024) toast('Loading image…', '');
   const reader = new FileReader();
-  reader.onload = e => openCropModal(e.target.result, key);
+  reader.onload = e => {
+    // Downsample to max 1200px before crop modal — keeps crop canvas fast on mobile
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1200;
+      if (img.width <= MAX && img.height <= MAX) {
+        openCropModal(e.target.result, key);
+        return;
+      }
+      const ratio  = Math.min(MAX / img.width, MAX / img.height);
+      const oc     = document.createElement('canvas');
+      oc.width     = Math.round(img.width  * ratio);
+      oc.height    = Math.round(img.height * ratio);
+      oc.getContext('2d').drawImage(img, 0, 0, oc.width, oc.height);
+      openCropModal(oc.toDataURL('image/jpeg', 0.92), key);
+    };
+    img.src = e.target.result;
+  };
   reader.readAsDataURL(file);
 }
 
@@ -317,7 +337,16 @@ function setupCrop() {
   canvas.addEventListener('touchend',   onEnd);
 }
 
+let _cropRafPending = false;
 function drawCropCanvas() {
+  if (_cropRafPending) return;
+  _cropRafPending = true;
+  requestAnimationFrame(() => {
+    _cropRafPending = false;
+    _drawCropCanvasNow();
+  });
+}
+function _drawCropCanvasNow() {
   const canvas = $('cropCanvas');
   const img = cropState.srcImg;
   if (!img) return;
@@ -379,9 +408,21 @@ function applyCrop() {
   ctx.filter = 'none';
   ctx.restore();
 
-  // Apply sharpness via unsharp mask
+  // Apply sharpness — work on a downscaled copy to keep it fast, then scale back
   if (cropState.sharpness > 0) {
-    applySharpness(ctx, off.width, off.height, cropState.sharpness / 100);
+    const SHARP_MAX = 800;
+    if (off.width > SHARP_MAX || off.height > SHARP_MAX) {
+      const sr   = Math.min(SHARP_MAX / off.width, SHARP_MAX / off.height);
+      const small = document.createElement('canvas');
+      small.width  = Math.round(off.width  * sr);
+      small.height = Math.round(off.height * sr);
+      const sctx = small.getContext('2d');
+      sctx.drawImage(off, 0, 0, small.width, small.height);
+      applySharpness(sctx, small.width, small.height, cropState.sharpness / 100);
+      ctx.drawImage(small, 0, 0, off.width, off.height);
+    } else {
+      applySharpness(ctx, off.width, off.height, cropState.sharpness / 100);
+    }
   }
 
   // Crop
@@ -529,13 +570,13 @@ function setupShare() {
   });
   $('btnGeneratePDF').addEventListener('click', generatePDF);
   $('btnShareWA').addEventListener('click', shareWhatsApp);
-  $('recipientName').addEventListener('input', updateA4Preview);
+  $('recipientName').addEventListener('input', debounce(updateA4Preview, 300));
 
   // Zoom controls
   $('btnZoomMinus').addEventListener('click', () => setZoom(getZoom() - 5));
   $('btnZoomPlus').addEventListener('click',  () => setZoom(getZoom() + 5));
   $('zoomInput').addEventListener('change', e => setZoom(parseInt(e.target.value) || 100));
-  $('zoomInput').addEventListener('input',  e => { if (e.target.value.length >= 2) setZoom(parseInt(e.target.value) || 100); });
+  $('zoomInput').addEventListener('input',  debounce(e => { if (e.target.value.length >= 2) setZoom(parseInt(e.target.value) || 100); }, 300));
   $('btnZoomReset').addEventListener('click', () => setZoom(100));
 }
 
@@ -775,19 +816,21 @@ function autoOptimise(img) {
     d[i+2] = lutB[d[i+2]];
   }
 
-  // ── Step 5: Mild unsharp mask for text crispness ─────────────────────────
-  const tmp = new Uint8ClampedArray(d);
+  // ── Step 5: Mild unsharp mask — skip if canvas is large (already sharp enough after LUT)
   const w = oc.width, h = oc.height;
-  const amount = 0.4;
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      const idx = (y * w + x) * 4;
-      for (let c = 0; c < 3; c++) {
-        const center = tmp[idx + c];
-        const neighbors = tmp[((y-1)*w+x)*4+c] + tmp[((y+1)*w+x)*4+c] +
-                          tmp[(y*w+x-1)*4+c]   + tmp[(y*w+x+1)*4+c];
-        const blurred = neighbors / 4;
-        d[idx + c] = Math.min(255, Math.max(0, Math.round(center + amount * (center - blurred))));
+  if (w <= 900 && h <= 900) {
+    const tmp = new Uint8ClampedArray(d);
+    const amount = 0.35;
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const idx = (y * w + x) * 4;
+        for (let c = 0; c < 3; c++) {
+          const center = tmp[idx + c];
+          const neighbors = tmp[((y-1)*w+x)*4+c] + tmp[((y+1)*w+x)*4+c] +
+                            tmp[(y*w+x-1)*4+c]   + tmp[(y*w+x+1)*4+c];
+          const blurred = neighbors / 4;
+          d[idx + c] = Math.min(255, Math.max(0, Math.round(center + amount * (center - blurred))));
+        }
       }
     }
   }
@@ -957,6 +1000,15 @@ async function shareWhatsApp() {
   } finally {
     btn.disabled = false;
   }
+}
+
+// ─── DEBOUNCE UTILITY ────────────────────────────────────────────────────────
+function debounce(fn, ms) {
+  let t;
+  return function(...args) {
+    clearTimeout(t);
+    t = setTimeout(() => fn.apply(this, args), ms);
+  };
 }
 
 function loadScript(src) {
